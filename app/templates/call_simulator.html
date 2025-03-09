@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Call Simulator - AI Call Center</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css">
+    <style>
+        .chat-container {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            border-radius: 15px;
+            max-width: 70%;
+            position: relative;
+        }
+        .user-message {
+            background-color: #007bff;
+            color: white;
+            margin-left: auto;
+        }
+        .agent-message {
+            background-color: #e9ecef;
+            color: black;
+            margin-right: auto;
+        }
+        .recording-indicator {
+            display: none;
+            color: red;
+            margin-left: 10px;
+        }
+        .recording-indicator.active {
+            display: inline;
+        }
+        #voiceInputBtn.recording {
+            background-color: #dc3545;
+            color: white;
+        }
+        #audioToggle.active {
+            background-color: #198754;
+            color: white;
+        }
+        .controls-container {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .status-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .speed-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+        .speed-slider {
+            flex-grow: 1;
+        }
+        .speed-value {
+            min-width: 60px;
+            text-align: center;
+        }
+        .speech-progress {
+            display: none;
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+        .speech-progress.active {
+            display: block;
+        }
+        .speech-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 5px;
+        }
+        .progress {
+            flex-grow: 1;
+            height: 20px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">AI Call Center</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/simulator">Call Simulator</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/call-history">Call History</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-md-8 offset-md-2">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">Call Simulator</h5>
+                            <div class="status-container">
+                                <span id="callStatus" class="badge bg-secondary">Not Connected</span>
+                                <button id="startCall" class="btn btn-success btn-sm">Start Call</button>
+                                <button id="endCall" class="btn btn-danger btn-sm" disabled>End Call</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div id="chatContainer" class="chat-container"></div>
+                        <div class="input-group">
+                            <input type="text" id="messageInput" class="form-control" placeholder="Type your message..." disabled>
+                            <button id="sendMessage" class="btn btn-primary" disabled>
+                                <i class="bi bi-send"></i>
+                            </button>
+                        </div>
+                        <div class="controls-container">
+                            <button id="voiceInputBtn" class="btn btn-outline-secondary" disabled>
+                                <i class="bi bi-mic-fill"></i> Voice Input
+                            </button>
+                            <button id="audioToggle" class="btn btn-outline-secondary" disabled>
+                                <i class="bi bi-volume-up-fill"></i> Text-to-Speech
+                            </button>
+                            <span id="recordingIndicator" class="recording-indicator">
+                                <i class="bi bi-record-circle"></i> Recording...
+                            </span>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <div class="speed-controls">
+                            <span><i class="bi bi-speedometer2"></i> Speech Rate:</span>
+                            <input type="range" id="speechRate" class="form-range speed-slider" 
+                                   min="0.5" max="2" step="0.1" value="1">
+                            <span id="speechRateValue" class="speed-value">1.0x</span>
+                        </div>
+                        <div id="speechProgress" class="speech-progress">
+                            <div class="speech-controls">
+                                <span id="currentText" class="text-truncate"></span>
+                                <button id="stopSpeech" class="btn btn-danger btn-sm">
+                                    <i class="bi bi-stop-fill"></i> Stop
+                                </button>
+                            </div>
+                            <div class="progress">
+                                <div id="speechProgressBar" class="progress-bar" role="progressbar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentSimulationId = null;
+        let isCallActive = false;
+        let recognition = null;
+        let synth = window.speechSynthesis;
+        let currentUtterance = null;
+        let isAudioEnabled = true;
+        let isRecording = false;
+        let currentSpeechRate = 1.0;
+        let speechStartTime = null;
+        let speechDuration = 0;
+        let progressInterval = null;
+        let resumeTimeout = null;
+
+        // Initialize speech recognition
+        function initializeSpeechRecognition() {
+            try {
+                window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                recognition = new SpeechRecognition();
+                recognition.continuous = false;
+                recognition.interimResults = false;
+                recognition.lang = 'en-US';
+
+                recognition.onstart = () => {
+                    isRecording = true;
+                    document.getElementById('voiceInputBtn').classList.add('recording');
+                    document.getElementById('recordingIndicator').classList.add('active');
+                    document.getElementById('messageInput').placeholder = 'Listening...';
+                };
+
+                recognition.onend = () => {
+                    isRecording = false;
+                    document.getElementById('voiceInputBtn').classList.remove('recording');
+                    document.getElementById('recordingIndicator').classList.remove('active');
+                    document.getElementById('messageInput').placeholder = 'Type your message...';
+                };
+
+                recognition.onresult = (event) => {
+                    const transcript = event.results[0][0].transcript;
+                    document.getElementById('messageInput').value = transcript;
+                    sendMessage(transcript);
+                };
+
+                recognition.onerror = (event) => {
+                    console.error('Speech recognition error:', event.error);
+                    isRecording = false;
+                    document.getElementById('voiceInputBtn').classList.remove('recording');
+                    document.getElementById('recordingIndicator').classList.remove('active');
+                    if (event.error === 'not-allowed') {
+                        alert('Please allow microphone access to use voice input.');
+                    } else {
+                        alert('Speech recognition error: ' + event.error);
+                    }
+                };
+
+                return true;
+            } catch (error) {
+                console.error('Speech recognition initialization error:', error);
+                return false;
+            }
+        }
+
+        // Toggle speech recognition
+        async function toggleSpeechRecognition() {
+            if (!recognition) {
+                if (!initializeSpeechRecognition()) {
+                    alert('Speech recognition is not supported in your browser.');
+                    return;
+                }
+            }
+
+            if (isRecording) {
+                recognition.stop();
+            } else {
+                try {
+                    // Request microphone permission before starting
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    stream.getTracks().forEach(track => track.stop()); // Stop the stream immediately
+                    recognition.start();
+                } catch (error) {
+                    console.error('Error accessing microphone:', error);
+                    alert('Please allow microphone access to use voice input.');
+                }
+            }
+        }
+
+        // Initialize speech synthesis
+        function initializeSpeechSynthesis() {
+            if (!window.speechSynthesis) {
+                console.error('Speech synthesis not supported');
+                return false;
+            }
+
+            synth = window.speechSynthesis;
+            isAudioEnabled = true;
+            document.getElementById('audioToggle').classList.add('active');
+
+            // Keep speech synthesis alive
+            function keepAlive() {
+                if (synth.speaking) {
+                    synth.pause();
+                    synth.resume();
+                    resumeTimeout = setTimeout(keepAlive, 5000);
+                }
+            }
+
+            // Load voices and set up event listener for voice changes
+            function loadVoices() {
+                const voices = synth.getVoices();
+                if (voices.length > 0) {
+                    console.log('Available voices:', voices);
+                    return true;
+                }
+                return false;
+            }
+
+            // Try loading voices immediately
+            if (!loadVoices()) {
+                // If voices aren't loaded yet, wait for them
+                speechSynthesis.onvoiceschanged = loadVoices;
+            }
+
+            return true;
+        }
+
+        // Toggle text-to-speech
+        function toggleTextToSpeech() {
+            isAudioEnabled = !isAudioEnabled;
+            const audioToggle = document.getElementById('audioToggle');
+            audioToggle.classList.toggle('active');
+            
+            if (!isAudioEnabled) {
+                stopSpeech();
+            }
+        }
+
+        // Update speech rate
+        function updateSpeechRate(rate) {
+            currentSpeechRate = parseFloat(rate);
+            document.getElementById('speechRateValue').textContent = currentSpeechRate.toFixed(1) + 'x';
+            
+            // If currently speaking, restart with new rate
+            if (currentUtterance && synth.speaking) {
+                const text = currentUtterance.text;
+                stopSpeech();
+                speakText(text);
+            }
+        }
+
+        // Update speech progress
+        function updateSpeechProgress() {
+            if (!speechStartTime || !speechDuration) return;
+            
+            const elapsed = (Date.now() - speechStartTime) / 1000;
+            const progress = Math.min((elapsed / speechDuration) * 100, 100);
+            
+            document.getElementById('speechProgressBar').style.width = `${progress}%`;
+            
+            if (progress >= 100) {
+                clearInterval(progressInterval);
+                hideSpeechProgress();
+            }
+        }
+
+        // Show speech progress
+        function showSpeechProgress(text) {
+            const progressElement = document.getElementById('speechProgress');
+            progressElement.classList.add('active');
+            document.getElementById('currentText').textContent = text;
+            document.getElementById('speechProgressBar').style.width = '0%';
+        }
+
+        // Hide speech progress
+        function hideSpeechProgress() {
+            const progressElement = document.getElementById('speechProgress');
+            progressElement.classList.remove('active');
+            document.getElementById('currentText').textContent = '';
+            document.getElementById('speechProgressBar').style.width = '0%';
+            
+            if (progressInterval) {
+                clearInterval(progressInterval);
+                progressInterval = null;
+            }
+        }
+
+        // Stop speech
+        function stopSpeech() {
+            if (synth && currentUtterance) {
+                synth.cancel();
+                if (resumeTimeout) {
+                    clearTimeout(resumeTimeout);
+                }
+                currentUtterance = null;
+            }
+            hideSpeechProgress();
+        }
+
+        // Speak text using speech synthesis
+        function speakText(text) {
+            if (!synth || !isAudioEnabled) return;
+
+            // Cancel any ongoing speech
+            stopSpeech();
+
+            currentUtterance = new SpeechSynthesisUtterance(text);
+            
+            // Get available voices and select an English voice
+            let voices = synth.getVoices();
+            let englishVoice = voices.find(voice => 
+                voice.lang.startsWith('en-') && 
+                (voice.name.includes('Female') || voice.name.includes('Google'))
+            );
+            
+            if (englishVoice) {
+                currentUtterance.voice = englishVoice;
+            } else if (voices.length > 0) {
+                currentUtterance.voice = voices[0];
+            }
+
+            // Set speech properties
+            currentUtterance.rate = currentSpeechRate;
+            currentUtterance.pitch = 1.0;
+            currentUtterance.volume = 1.0;
+
+            // Calculate approximate duration based on text length and speech rate
+            speechDuration = (text.length * 0.06) / currentSpeechRate;
+            speechStartTime = Date.now();
+            showSpeechProgress(text);
+            
+            if (progressInterval) {
+                clearInterval(progressInterval);
+            }
+            progressInterval = setInterval(updateSpeechProgress, 50);
+
+            currentUtterance.onend = () => {
+                if (resumeTimeout) {
+                    clearTimeout(resumeTimeout);
+                }
+                currentUtterance = null;
+                hideSpeechProgress();
+            };
+
+            currentUtterance.onerror = (event) => {
+                console.error('Speech synthesis error:', event);
+                if (resumeTimeout) {
+                    clearTimeout(resumeTimeout);
+                }
+                currentUtterance = null;
+                hideSpeechProgress();
+            };
+
+            synth.speak(currentUtterance);
+            
+            // Start the keep-alive mechanism
+            if (resumeTimeout) {
+                clearTimeout(resumeTimeout);
+            }
+            resumeTimeout = setTimeout(function keepAlive() {
+                if (synth.speaking) {
+                    synth.pause();
+                    synth.resume();
+                    resumeTimeout = setTimeout(keepAlive, 5000);
+                }
+            }, 5000);
+        }
+
+        // Update call status and UI elements
+        function updateCallStatus(status, isActive) {
+            const statusElement = document.getElementById('callStatus');
+            const startButton = document.getElementById('startCall');
+            const endButton = document.getElementById('endCall');
+            const messageInput = document.getElementById('messageInput');
+            const sendButton = document.getElementById('sendMessage');
+            const voiceInputBtn = document.getElementById('voiceInputBtn');
+            const audioToggle = document.getElementById('audioToggle');
+
+            statusElement.textContent = status;
+            statusElement.className = `badge ${isActive ? 'bg-success' : 'bg-secondary'}`;
+            
+            startButton.disabled = isActive;
+            endButton.disabled = !isActive;
+            messageInput.disabled = !isActive;
+            sendButton.disabled = !isActive;
+            voiceInputBtn.disabled = !isActive;
+            audioToggle.disabled = !isActive;
+            
+            isCallActive = isActive;
+        }
+
+        // Add a message to the chat container
+        function addMessage(message, isUser) {
+            const chatContainer = document.getElementById('chatContainer');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user-message' : 'agent-message'}`;
+            messageDiv.textContent = message;
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+
+            if (!isUser && isAudioEnabled) {
+                speakText(message);
+            }
+        }
+
+        // Send a message to the server
+        async function sendMessage(message) {
+            if (!isCallActive || !message.trim()) return;
+
+            try {
+                addMessage(message, true);
+                document.getElementById('messageInput').value = '';
+
+                const response = await fetch('/api/simulate/message', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        simulation_id: currentSimulationId,
+                        message: message
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    addMessage(data.response, false);
+                } else {
+                    console.error('Error sending message:', await response.text());
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        // Event Listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeSpeechRecognition();
+            initializeSpeechSynthesis();
+
+            // Initialize speech rate control
+            const speechRateSlider = document.getElementById('speechRate');
+            speechRateSlider.value = currentSpeechRate.toString();
+            document.getElementById('speechRateValue').textContent = currentSpeechRate.toFixed(1) + 'x';
+            
+            // Update rate on change, not just on input
+            speechRateSlider.addEventListener('change', (e) => {
+                updateSpeechRate(e.target.value);
+            });
+
+            // Update display while sliding
+            speechRateSlider.addEventListener('input', (e) => {
+                document.getElementById('speechRateValue').textContent = parseFloat(e.target.value).toFixed(1) + 'x';
+            });
+        });
+
+        document.getElementById('startCall').addEventListener('click', async () => {
+            try {
+                const response = await fetch('/api/simulate/start', { method: 'POST' });
+                const data = await response.json();
+                currentSimulationId = data.simulation_id;
+                updateCallStatus('Connected', true);
+                document.getElementById('chatContainer').innerHTML = '';
+                addMessage('Hello! How can I assist you today?', false);
+            } catch (error) {
+                console.error('Error starting call:', error);
+            }
+        });
+
+        document.getElementById('endCall').addEventListener('click', async () => {
+            if (!currentSimulationId) return;
+
+            try {
+                await fetch('/api/simulate/end', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ simulation_id: currentSimulationId })
+                });
+                updateCallStatus('Disconnected', false);
+                currentSimulationId = null;
+            } catch (error) {
+                console.error('Error ending call:', error);
+            }
+        });
+
+        document.getElementById('messageInput').addEventListener('keypress', (event) => {
+            if (event.key === 'Enter') {
+                sendMessage(event.target.value);
+            }
+        });
+
+        document.getElementById('sendMessage').addEventListener('click', () => {
+            const message = document.getElementById('messageInput').value;
+            sendMessage(message);
+        });
+
+        document.getElementById('voiceInputBtn').addEventListener('click', toggleSpeechRecognition);
+        document.getElementById('audioToggle').addEventListener('click', toggleTextToSpeech);
+        document.getElementById('stopSpeech').addEventListener('click', stopSpeech);
+    </script>
+</body>
+</html> 
